@@ -52,6 +52,13 @@ abstract class AbstractResponse implements Response
     protected $manager;
 
     /**
+     * Options
+     *
+     * @var array
+     */
+    protected $options;
+
+    /**
      * @param \League\Fractal\Manager $manager
      */
     public function __construct(Manager $manager)
@@ -65,6 +72,17 @@ abstract class AbstractResponse implements Response
     public function getManager()
     {
         return $this->manager;
+    }
+
+    /**
+     * Set options
+     * 
+     * @param array $options
+     * @return void
+     */
+    public function setOptions(array $options = [])
+    {
+        return $this->options = $options;
     }
 
     /**
@@ -118,7 +136,7 @@ abstract class AbstractResponse implements Response
 
         $rootScope = $this->manager->createData($resource);
 
-        return $this->withArray($rootScope->toArray(), $headers);
+        return $this->withArray($this->processResponse($rootScope->toArray()), $headers);
     }
 
     /**
@@ -146,7 +164,7 @@ abstract class AbstractResponse implements Response
 
         $rootScope = $this->manager->createData($resource);
 
-        return $this->withArray($rootScope->toArray(), $headers);
+        return $this->withArray($this->processResponse($rootScope->toArray()), $headers);
     }
 
     /**
@@ -265,5 +283,71 @@ abstract class AbstractResponse implements Response
     public function errorUnwillingToProcess($message = 'Server is unwilling to process the request', array $headers = array())
     {
         return $this->setStatusCode(431)->withError($message, self::CODE_UNWILLING_TO_PROCESS, $headers);
+    }
+
+    /**
+     * Process the response data before returning it
+     *
+     * @param array $data
+     * @return array
+     */
+    protected function processResponse(array $data)
+    {
+        if (isset($this->options['envelope']) && empty($this->options['envelope'])) {
+            //no envelope required. All meta data to be returned as custom headers
+            
+            if (isset($data['meta']['pagination'])) {
+                //pagination meta should be in the appropriate HTTP headers
+                //Create the "Link" header
+                $link = '';
+                foreach ($data['meta']['pagination']['links'] as $rel => $uri) {
+                    if ($link) $link .= ",";
+                    $link .= "<{$uri}>; rel=\"{$rel}\"";
+                }
+                $headers['Link'] = $link;
+                unset($data['meta']['pagination']['links']);
+
+                //All other pagination data should use a custom HTTP header
+                foreach ($data['meta']['pagination'] as $name => $val) {
+                    $headers = array_merge($headers, $this->toHeaders($data['meta']['pagination']));
+                }
+                unset($data['meta']['pagination']);
+            }
+
+            if (isset($data['meta'])) {
+                $headers = array_merge($headers, $this->toHeaders($data['meta']));    
+            }
+            $data = $data['data'];
+        }
+        return $data;
+    }
+
+    /**
+     * Converts a variable name to a consistent HTTP naming format
+     * @param  string $name
+     * @return string
+     */
+    protected function headerName($name)
+    {
+        $name = "X-" . str_replace(' ', '-', ucwords(str_replace('_', ' ', $name)));
+        return $name;
+    }
+
+    /**
+     * Convert data to HTTP headers
+     * @param  array $data
+     * @return array
+     */
+    protected function toHeaders($data)
+    {
+        $headers = [];
+        foreach ($data as $name => $val) {
+            if (is_array($val)) {
+                return $this->errorInternalError('Arrays of meta data are not supported yet.');
+            }
+            $name = $this->headerName($name);
+            $headers[$name] = $val;
+        }
+        return $headers;
     }
 }

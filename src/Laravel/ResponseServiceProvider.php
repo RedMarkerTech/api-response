@@ -48,7 +48,8 @@ class ResponseServiceProvider extends ServiceProvider
 
         // Return the Response object
         $response = new Response($manager);
-
+        //We treat all query params as potential options
+        $response->setOptions(Request::all());
         //Set the response instance properly
         $this->app->instance('EllipseSynergie\ApiResponse\Contracts\Response', $response);
 
